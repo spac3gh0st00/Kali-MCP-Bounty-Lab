@@ -185,7 +185,7 @@ In the Ubuntu terminal:
 
 ```bash
 hostname -I
-# Returns something like 192.168.91.132
+# Returns something like 192.168.x.x
 ```
 
 Write this IP down — you need it for the next step.
@@ -194,7 +194,7 @@ Write this IP down — you need it for the next step.
 
 ```bash
 sudo ufw allow 22/tcp    # SSH
-sudo ufw allow from 192.168.91.0/24 to any port 8000  # MCP — VM network only
+sudo ufw allow from 192.168.x.x/24 to any port 8000  # MCP — VM network only
 sudo ufw enable
 sudo ufw status
 ```
@@ -204,10 +204,10 @@ sudo ufw status
 Open **PowerShell as Administrator** on your Windows host:
 
 ```powershell
-netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=192.168.91.132 connectport=8000
+netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=192.168.x.x connectport=8000
 ```
 
-Replace `192.168.91.132` with your actual VM IP from Step 12.
+Replace `192.168.x.x` with your actual VM IP from Step 12.
 
 Verify the rule:
 
@@ -462,7 +462,7 @@ ls /app/sessions/
 netsh interface portproxy show all
 
 # Re-add if missing
-netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=192.168.91.132 connectport=8000
+netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=192.168.x.x connectport=8000
 
 # Confirm container is running in Ubuntu
 docker ps

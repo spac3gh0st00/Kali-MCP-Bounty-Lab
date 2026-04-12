@@ -1,0 +1,150 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-mono); }
+.wrap { padding: 1rem 0; }
+.search-bar { width: 100%; padding: 8px 12px; font-size: 14px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: var(--color-text-primary); margin-bottom: 1.25rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.25rem; }
+.tab { padding: 5px 12px; font-size: 12px; border: 0.5px solid var(--color-border-secondary); border-radius: 99px; cursor: pointer; background: var(--color-background-primary); color: var(--color-text-secondary); font-family: var(--font-sans); }
+.tab.active { background: var(--color-background-tertiary); color: var(--color-text-primary); border-color: var(--color-border-primary); font-weight: 500; }
+.section { margin-bottom: 1.5rem; }
+.section-title { font-size: 11px; font-weight: 500; color: var(--color-text-secondary); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; font-family: var(--font-sans); }
+.cmd-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-bottom: 6px; cursor: pointer; transition: border-color 0.15s; }
+.cmd-card:hover { border-color: var(--color-border-secondary); }
+.cmd-card.copied { border-color: var(--color-border-success); }
+.cmd-label { font-size: 11px; color: var(--color-text-secondary); font-family: var(--font-sans); margin-bottom: 4px; }
+.cmd-code { font-size: 12px; color: var(--color-text-primary); font-family: var(--font-mono); word-break: break-all; }
+.cmd-note { font-size: 11px; color: var(--color-text-tertiary); font-family: var(--font-sans); margin-top: 4px; }
+.copy-hint { font-size: 10px; color: var(--color-text-success); font-family: var(--font-sans); margin-top: 4px; display: none; }
+.cmd-card.copied .copy-hint { display: block; }
+.empty { font-size: 13px; color: var(--color-text-secondary); font-family: var(--font-sans); padding: 1rem 0; }
+</style>
+
+<div class="wrap">
+  <h2 class="sr-only">Kali MCP bug bounty command cheat sheet</h2>
+  <input class="search-bar" id="search" placeholder="Search commands..." oninput="render()" />
+  <div class="tabs" id="tabs"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+const data = {
+  "startup": {
+    label: "Lab startup",
+    cmds: [
+      { label: "Connect to Kali container", code: "docker exec -it kali-mcp-server bash", note: "Run this in Termius after SSH into Ubuntu" },
+      { label: "Start Kali if not running", code: "cd ~/kali-mcp && docker compose up -d", note: "" },
+      { label: "Check container status", code: "docker ps", note: "" },
+      { label: "View live logs", code: "docker logs -f kali-mcp-server", note: "" },
+      { label: "Check Tailscale connection", code: "tailscale status", note: "Run on Ubuntu VM" },
+    ]
+  },
+  "recon": {
+    label: "Recon",
+    cmds: [
+      { label: "DNS enumeration", code: "dnsenum --enum target.com", note: "Finds subdomains, MX, NS records" },
+      { label: "Subdomain brute force", code: "gobuster dns -d target.com -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt", note: "" },
+      { label: "Whois lookup", code: "whois target.com", note: "Ownership and registration info" },
+      { label: "Find subdomains fast", code: "sublist3r -d target.com -o subs.txt", note: "Passive subdomain discovery" },
+      { label: "Certificate transparency", code: "curl -s 'https://crt.sh/?q=%.target.com&output=json' | jq '.[].name_value'", note: "Finds subdomains via SSL certs" },
+    ]
+  },
+  "nmap": {
+    label: "Nmap",
+    cmds: [
+      { label: "Quick scan (top 1000 ports)", code: "nmap -sV -T4 target.com", note: "" },
+      { label: "Full port scan", code: "nmap -sV -p- -T4 target.com", note: "Scans all 65535 ports — slower" },
+      { label: "Aggressive scan", code: "nmap -A -T4 target.com", note: "OS detect, version, scripts, traceroute" },
+      { label: "UDP scan", code: "nmap -sU -T4 --top-ports 100 target.com", note: "Needs root — finds DNS, SNMP etc" },
+      { label: "Vulnerability scripts", code: "nmap --script vuln target.com", note: "Runs common vuln detection scripts" },
+      { label: "Save output", code: "nmap -sV target.com -oN scan.txt", note: "Saves to file for reporting" },
+    ]
+  },
+  "web": {
+    label: "Web scanning",
+    cmds: [
+      { label: "Directory brute force", code: "gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt", note: "" },
+      { label: "Dir scan with extensions", code: "gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt -x php,html,js,txt", note: "" },
+      { label: "Nikto web vuln scan", code: "nikto -h https://target.com", note: "Checks for misconfigs, outdated software" },
+      { label: "Find JS files", code: "gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt -x js", note: "Look for exposed API keys in JS" },
+      { label: "Spider site for links", code: "wget --spider -r -nd -nv https://target.com 2>&1 | grep '^--' | awk '{ print $3 }'", note: "" },
+      { label: "Check security headers", code: "curl -sI https://target.com | grep -i 'x-frame\\|content-security\\|strict-transport\\|x-content'", note: "" },
+    ]
+  },
+  "sql": {
+    label: "SQLMap",
+    cmds: [
+      { label: "Basic SQL injection test", code: "sqlmap -u 'https://target.com/page?id=1' --dbs", note: "Tests GET parameter for SQLi" },
+      { label: "POST request test", code: "sqlmap -u 'https://target.com/login' --data='user=test&pass=test' --dbs", note: "" },
+      { label: "Dump specific DB", code: "sqlmap -u 'https://target.com/page?id=1' -D dbname --tables", note: "" },
+      { label: "Dump table data", code: "sqlmap -u 'https://target.com/page?id=1' -D dbname -T tablename --dump", note: "" },
+      { label: "With cookies (authenticated)", code: "sqlmap -u 'https://target.com/page?id=1' --cookie='session=abc123' --dbs", note: "" },
+    ]
+  },
+  "ssl": {
+    label: "SSL / TLS",
+    cmds: [
+      { label: "Check SSL certificate", code: "openssl s_client -connect target.com:443 </dev/null 2>/dev/null | openssl x509 -noout -text", note: "" },
+      { label: "Test SSL vulnerabilities", code: "sslscan target.com", note: "Checks for weak ciphers, BEAST, POODLE" },
+      { label: "Check for Heartbleed", code: "nmap --script ssl-heartbleed target.com", note: "" },
+      { label: "Check cipher suites", code: "nmap --script ssl-enum-ciphers -p 443 target.com", note: "" },
+    ]
+  },
+  "sessions": {
+    label: "Sessions",
+    cmds: [
+      { label: "List all sessions", code: "ls /app/sessions/", note: "Saved pentest sessions" },
+      { label: "View session output", code: "cat /app/sessions/<session-id>/output.txt", note: "" },
+      { label: "Save scan output", code: "nmap -sV target.com > /app/sessions/myscan.txt", note: "Persist results across container restarts" },
+    ]
+  }
+};
+
+const cats = Object.keys(data);
+let active = "all";
+
+function render() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const content = document.getElementById("content");
+  const tabs = document.getElementById("tabs");
+
+  tabs.innerHTML = ['all', ...cats].map(k => {
+    const label = k === 'all' ? 'All' : data[k].label;
+    return `<div class="tab ${active===k?'active':''}" onclick="setTab('${k}')">${label}</div>`;
+  }).join('');
+
+  let html = '';
+  const toShow = active === 'all' ? cats : [active];
+
+  toShow.forEach(k => {
+    const sec = data[k];
+    const filtered = sec.cmds.filter(c =>
+      !q || c.label.toLowerCase().includes(q) || c.code.toLowerCase().includes(q) || c.note.toLowerCase().includes(q)
+    );
+    if (!filtered.length) return;
+    html += `<div class="section"><div class="section-title">${sec.label}</div>`;
+    filtered.forEach((c, i) => {
+      html += `<div class="cmd-card" id="${k}-${i}" onclick="copy('${k}-${i}','${c.code.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+        <div class="cmd-label">${c.label}</div>
+        <div class="cmd-code">${c.code}</div>
+        ${c.note ? `<div class="cmd-note">${c.note}</div>` : ''}
+        <div class="copy-hint">Copied to clipboard</div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  content.innerHTML = html || '<div class="empty">No commands match your search.</div>';
+}
+
+function setTab(k) { active = k; render(); }
+
+function copy(id, code) {
+  navigator.clipboard.writeText(code).catch(() => {});
+  const el = document.getElementById(id);
+  el.classList.add('copied');
+  setTimeout(() => el.classList.remove('copied'), 1500);
+}
+
+render();
+</script>

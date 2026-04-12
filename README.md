@@ -4,7 +4,7 @@ A complete home security lab setup that connects Claude Desktop to a Kali Linux 
 
 ## Interactive Docker Cheat Sheet
 
-[Open Cheat Sheet](https://spac3gh0st00.github.io/Kali-MCP-Server--Windows-VMware-Claude-Desktop/)
+[Open Cheat Sheet](https://spac3gh0st00.github.io/KaliBot-AI-Powered-Bug-Bounty-Lab-Kali-MCP-Claude-Desktop-Discord-Recon-Agent/)
 
 ---
 

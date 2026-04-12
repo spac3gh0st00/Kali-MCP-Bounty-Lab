@@ -2,9 +2,6 @@
 
 A complete home security lab setup that connects Claude Desktop to a Kali Linux Docker container running inside an Ubuntu VM on VMware. Built for bug bounty research and security learning.
 
-## Interactive Cheat Sheet
-[Open Cheat Sheet](https://spac3gh0st00.github.io/Kali-MCP-Server--Windows-VMware-Claude-Desktop/)
-
 ---
 
 ## Architecture
@@ -336,7 +333,10 @@ docker exec -it kali-mcp-server bash
 You now have a full Kali shell on your phone.
 
 ---
+## Interactive Cheat Sheet
+[Open Cheat Sheet](https://spac3gh0st00.github.io/Kali-MCP-Server--Windows-VMware-Claude-Desktop/)
 
+---
 ## Security Checklist
 
 | Item | Status |

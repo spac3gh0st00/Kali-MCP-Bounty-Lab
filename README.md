@@ -1,6 +1,6 @@
-# Kali Linux Docker MCP Server — Windows + VMware + Claude Desktop + Discord Bot
+# KaliBot — AI-Powered Bug Bounty Lab | Kali MCP + Claude Desktop + Discord Recon Agent
 
-A complete home security lab setup that connects Claude Desktop to a Kali Linux Docker container running inside an Ubuntu VM on VMware, with a secure Discord bot interface for remote recon. Built for bug bounty research and security learning.
+A complete home security lab setup that connects Claude Desktop to a Kali Linux Docker container running inside an Ubuntu VM on VMware, with a secure Discord bot and AI-powered recon agent for remote bug bounty research. Built for bug bounty research and security learning.
 
 ## Interactive Docker Cheat Sheet
 
@@ -28,14 +28,34 @@ Windows Host (Claude Desktop)
   Kali Linux Container
   (35 security tools)
         |
-        | ← also reachable via:
+        | <- also reachable via:
         |
   Discord Bot (Ubuntu VM)
+        |   |
+        |   | /investigate or /generate_report
+        |   v
+        | Anthropic API (Claude AI)
+        | AI plans tools -> runs them -> writes report
         |
   Discord (slash commands)
         |
-  Your phone / any device
-  on Tailscale network
+  Your phone / any Tailscale device
+```
+
+---
+
+## Bug Bounty Workflow
+
+```
+1. /session_create name:target-2026       <- start a new session
+        |
+2. /investigate target:target.com         <- AI plans + runs recon automatically
+   OR manual slash commands:
+   /recon_auto, /port_scan, /web_audit...
+        |
+3. /generate_report                        <- AI reads all scan outputs
+        |                                     and writes a full report
+4. Submit to bug bounty program
 ```
 
 ---
@@ -49,6 +69,7 @@ Windows Host (Claude Desktop)
 | Ubuntu 24.04 LTS ISO | [Download here](https://ubuntu.com/download/desktop) |
 | Claude Desktop (direct installer) | [Download here](https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe) |
 | Node.js LTS | [Download here](https://nodejs.org) |
+| Anthropic API Key | [Get one here](https://console.anthropic.com) — $5 credit lasts weeks |
 | ~40GB free disk space | For VM + Docker image |
 | 8GB+ RAM | Minimum for stable VM |
 
@@ -158,7 +179,7 @@ cd kali-mcp
 
 ### Step 10 — Build the Docker image
 
-> This downloads the Kali base image and installs 35 security tools. Takes 10–20 minutes on first run.
+> This downloads the Kali base image and installs 35 security tools. Takes 10-20 minutes on first run.
 
 ```bash
 docker compose build
@@ -182,6 +203,27 @@ Check the logs:
 ```bash
 docker logs kali-mcp-server
 # Should show MCP server running on port 8000
+```
+
+### Step 11b — Install missing tools inside the container
+
+Some tools are not included in the base image. Install them now:
+
+```bash
+docker exec -it kali-mcp-server bash -c "
+apt-get update -q &&
+apt-get install -y dirb exploitdb wordlists &&
+curl -o /usr/local/bin/testssl.sh https://raw.githubusercontent.com/drwetter/testssl.sh/3.2/testssl.sh &&
+chmod +x /usr/local/bin/testssl.sh
+"
+```
+
+Verify:
+
+```bash
+docker exec kali-mcp-server which searchsploit
+docker exec kali-mcp-server ls /usr/share/wordlists/dirb/
+docker exec kali-mcp-server which testssl.sh
 ```
 
 ---
@@ -222,7 +264,7 @@ Verify the rule:
 
 ```powershell
 netsh interface portproxy show all
-# Should show: 127.0.0.1:8000 → 192.168.x.x:8000
+# Should show: 127.0.0.1:8000 -> 192.168.x.x:8000
 ```
 
 Test the connection in your Windows browser:
@@ -348,28 +390,16 @@ You now have a full Kali shell on your phone.
 
 A secure Discord bot that lets you trigger recon tools remotely via slash commands. The bot talks to the MCP server through the proper HTTP/SSE API — not raw shell access — so only the 35 defined tools can be called.
 
-### Architecture
+### Security Design
 
-```
-Discord (slash commands, private server)
-      |
-  Discord Bot (Python, running on Ubuntu VM)
-      |
-  localhost:8000 (MCP HTTP/SSE API)
-      |
-  Kali Docker container (defined tools only)
-```
-
-### Blocked Tools
-
-The following tools are intentionally not exposed via Discord. Use Claude Desktop locally for these:
-
-| Tool | Reason |
+| Protection | Detail |
 | --- | --- |
-| `run` | Arbitrary shell — too dangerous to expose remotely |
-| `payload_generate` | msfvenom payloads — deliberate local action only |
-| `reverse_shell` | Shell one-liners — deliberate local action only |
-| `hydra_attack` | Brute force — needs careful manual scope control |
+| User ID whitelist | Only your Discord account can run any command |
+| Server ID lock | Commands silently fail in any other server |
+| Ephemeral responses | Only you can see output — invisible to others in the channel |
+| Blocked tools | `run`, `payload_generate`, `reverse_shell`, `hydra_attack` never exposed |
+| Audit logging | Every command logged with timestamp to `bot_audit.log` |
+| MCP API only | Goes through the defined tool layer — no raw shell access |
 
 ### Step 22 — Create the Discord Bot
 
@@ -383,11 +413,17 @@ The following tools are intentionally not exposed via Discord. Use Claude Deskto
 8. Under Bot Permissions check: `Send Messages` and `Use Slash Commands`
 9. Copy the generated URL → open in browser → invite bot to your **private server**
 
-### Step 23 — Get Your Discord User ID
+### Step 23 — Get Your Discord User ID and Server ID
 
+**User ID:**
 1. Open Discord → **Settings** → **Advanced** → enable **Developer Mode**
 2. Right-click your username anywhere → **Copy User ID**
-3. Save this alongside your bot token
+
+**Server ID:**
+1. Right-click your private **server name** at the top left
+2. Click **Copy Server ID**
+
+Save both alongside your bot token.
 
 ### Step 24 — Create the Bot Files on Ubuntu VM
 
@@ -396,7 +432,11 @@ cd ~/kali-mcp
 
 # Create the bot script
 nano discord_kali_bot.py
-# Paste the full contents of discord_kali_bot.py then Ctrl+X → Y → Enter
+# Paste the full contents of discord_kali_bot.py then Ctrl+X -> Y -> Enter
+
+# Create the investigate/report module
+nano investigate.py
+# Paste the full contents of investigate.py then Ctrl+X -> Y -> Enter
 
 # Create the environment file
 nano .env
@@ -407,6 +447,7 @@ Inside `.env`:
 ```
 DISCORD_TOKEN=your_bot_token_here
 ALLOWED_USER_ID=your_discord_user_id_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 Save with `Ctrl+X` → `Y` → Enter
@@ -429,24 +470,17 @@ python3 -m venv ~/kali-mcp/venv
 # Activate it
 source ~/kali-mcp/venv/bin/activate
 
-# Install dependencies
-pip install discord.py httpx python-dotenv
+# Install all dependencies
+pip install discord.py httpx python-dotenv anthropic
 ```
 
 > You will see `(venv)` at the start of your terminal prompt when the virtual environment is active.
 
 ### Step 27 — Test the Bot Manually
 
-Make sure the Kali container is running first:
-
 ```bash
-docker ps
-# Should show kali-mcp-server with status "Up"
-```
+docker ps  # Make sure the Kali container is running first
 
-Run the bot:
-
-```bash
 source ~/kali-mcp/venv/bin/activate
 python3 ~/kali-mcp/discord_kali_bot.py
 ```
@@ -459,24 +493,22 @@ You should see:
 [+] Audit log: ~/kali-mcp/bot_audit.log
 ```
 
-Go to your private Discord server and test:
+Test in Discord:
 
 ```
 /session_status
 /dns_enum domain:google.com
 ```
 
-If both respond correctly, press `Ctrl+C` to stop the manual test and proceed.
+If both respond correctly press `Ctrl+C` and move to Step 28.
 
 ### Step 28 — Install as a Background Service
-
-Create the service file:
 
 ```bash
 nano ~/kali-mcp/discord-kali-bot.service
 ```
 
-Paste the following, replacing `YOUR_USERNAME` with your actual Ubuntu username:
+Paste the following — replace `YOUR_USERNAME` with your actual Ubuntu username:
 
 ```ini
 [Unit]
@@ -499,8 +531,6 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 ```
 
-Install and start the service:
-
 ```bash
 sudo cp ~/kali-mcp/discord-kali-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -517,34 +547,104 @@ You should see `Active: active (running)` in green.
 cat ~/kali-mcp/bot_audit.log
 ```
 
-Every command run through Discord is logged here with a timestamp, user ID, tool name, and arguments.
+---
+
+## Part 8 — AI Recon Agent
+
+Two AI-powered commands that use the Anthropic API to automate and interpret your recon.
+
+### /investigate — Autonomous Recon Agent
+
+Tell it a target and it plans, runs, and interprets everything automatically.
+
+```
+/investigate target:example.com depth:standard
+```
+
+**What it does:**
+1. Claude plans the recon strategy based on the target
+2. Picks the first tool to run (usually dns_enum or port_scan)
+3. Runs it through your MCP server
+4. Reads the results and decides what to run next
+5. Chains up to 8 tool calls automatically
+6. Writes a full structured report at the end
+
+**Depth options:**
+
+| Depth | Tool calls | Best for |
+| --- | --- | --- |
+| `quick` | 3-4 | Fast initial look |
+| `standard` | 5-6 | Normal recon |
+| `thorough` | up to 8 | Deep investigation |
+
+**Cost:** ~$0.05-0.15 per investigation
+
+---
+
+### /generate_report — Session Report Writer
+
+Reads all scan output files from your active session and writes a complete bug bounty report.
+
+```
+/generate_report
+```
+
+**What it does:**
+1. Finds your active session
+2. Reads all scan output `.txt` files in that session
+3. Sends everything to Claude
+4. Claude writes a structured report based on the actual data
+5. Report is posted back to Discord — only you can see it
+
+**Report includes:**
+- Executive summary
+- Key findings with severity ratings (Critical/High/Medium/Low/Info)
+- Attack surface map
+- Recommended next steps
+- Overall risk assessment
+
+**Cost:** ~$0.03-0.10 per report
+
+---
+
+### Anthropic API Setup
+
+1. Go to https://console.anthropic.com
+2. Sign up and add $5 credit (lasts weeks of normal use)
+3. Create an API key → copy it
+4. Add to your `.env`: `ANTHROPIC_API_KEY=sk-ant-...`
+5. Set a monthly spend limit under **Billing → Limits**
+
+---
 
 ### Available Discord Slash Commands
 
-| Command | Tool | Description |
-| --- | --- | --- |
-| `/port_scan` | `port_scan` | Nmap with presets (quick/full/stealth/service/aggressive) |
-| `/dns_enum` | `dns_enum` | Full DNS enumeration with zone transfer attempts |
-| `/subdomain_enum` | `subdomain_enum` | Subdomain discovery via subfinder + amass |
-| `/network_discovery` | `network_discovery` | Multi-stage network recon |
-| `/recon_auto` | `recon_auto` | Full automated recon pipeline (quick/standard/deep) |
-| `/web_enum` | `web_enumeration` | Web directory and endpoint discovery |
-| `/web_audit` | `web_audit` | Comprehensive web application security audit |
-| `/header_analysis` | `header_analysis` | HTTP security header analysis |
-| `/ssl_analysis` | `ssl_analysis` | SSL/TLS security assessment |
-| `/spider` | `spider_website` | Web crawling and spidering |
-| `/form_analysis` | `form_analysis` | Web form discovery and analysis |
-| `/vuln_scan` | `vulnerability_scan` | Automated vulnerability assessment |
-| `/exploit_search` | `exploit_search` | Search known exploits via searchsploit |
-| `/enum_shares` | `enum_shares` | SMB/NFS share enumeration |
-| `/hash_identify` | `hash_identify` | Identify hash types (MD5, SHA, bcrypt, NTLM...) |
-| `/encode` | `encode_decode` | Base64/URL/hex/HTML/rot13 encoding |
-| `/fetch_url` | `fetch` | Fetch and analyze web content |
-| `/session_create` | `session_create` | Create a new pentest session |
-| `/session_status` | `session_status` | Show current session status |
-| `/session_list` | `session_list` | List all pentest sessions |
-| `/session_history` | `session_history` | Show command history |
-| `/create_report` | `create_report` | Generate a structured report |
+| Command | Description |
+| --- | --- |
+| `/investigate` | AI agent — autonomously chains tools and writes a full report |
+| `/generate_report` | AI reads active session scan files and writes a bug bounty report |
+| `/port_scan` | Nmap with presets (quick/full/stealth/service/aggressive) |
+| `/dns_enum` | Full DNS enumeration with zone transfer attempts |
+| `/subdomain_enum` | Subdomain discovery via subfinder + amass |
+| `/network_discovery` | Multi-stage network recon |
+| `/recon_auto` | Full automated recon pipeline (quick/standard/deep) |
+| `/web_enum` | Web directory and endpoint discovery |
+| `/web_audit` | Comprehensive web application security audit |
+| `/header_analysis` | HTTP security header analysis |
+| `/ssl_analysis` | SSL/TLS security assessment |
+| `/spider` | Web crawling and spidering |
+| `/form_analysis` | Web form discovery and analysis |
+| `/vuln_scan` | Automated vulnerability assessment |
+| `/exploit_search` | Search known exploits via searchsploit |
+| `/enum_shares` | SMB/NFS share enumeration |
+| `/hash_identify` | Identify hash types (MD5, SHA, bcrypt, NTLM...) |
+| `/encode` | Base64/URL/hex/HTML/rot13 encoding |
+| `/fetch_url` | Fetch and analyze web content |
+| `/session_create` | Create a new pentest session |
+| `/session_status` | Show current session status |
+| `/session_list` | List all pentest sessions |
+| `/session_history` | Show command history |
+| `/create_report` | Generate a report with custom findings text |
 
 ---
 
@@ -558,12 +658,15 @@ Every command run through Discord is logged here with a timestamp, user ID, tool
 | netsh portproxy scope limited to localhost | Configured in Step 14 |
 | Tailscale encryption for remote access | WireGuard encrypted — no open internet ports |
 | Memory Integrity (Windows) | Check via Core Isolation settings |
-| Discord bot user ID whitelist | Configured in .env — only your account |
+| Discord bot user ID whitelist | Hardcoded in `is_authorized()` |
+| Discord bot server ID lock | Commands fail silently in all other servers |
+| Ephemeral responses | Only you can see bot output in Discord |
 | Discord bot token stored in .env | Never hardcoded — .env excluded from GitHub |
-| Dangerous tools blocked from Discord | run, payload_generate, reverse_shell, hydra_attack |
-| All Discord commands audit logged | Logged to ~/kali-mcp/bot_audit.log |
+| Dangerous tools blocked from Discord | `run`, `payload_generate`, `reverse_shell`, `hydra_attack` |
+| All Discord commands audit logged | Logged to `~/kali-mcp/bot_audit.log` |
 | Discord server private | Only you — no other members |
 | Discord account 2FA enabled | Enable in Discord Settings → Privacy & Safety |
+| Anthropic API key stored in .env | Never hardcoded — .env excluded from GitHub |
 
 > The container runs as root internally — required for tools like nmap that need raw socket access. This is standard for security lab setups and is contained within the Docker/VM isolation layers.
 
@@ -574,17 +677,24 @@ Every command run through Discord is logged here with a timestamp, user ID, tool
 ### Daily startup
 
 ```bash
-# In Ubuntu terminal (or Termius remotely)
 cd ~/kali-mcp && docker compose up -d
-
-# Bot starts automatically — verify if needed
 sudo systemctl status discord-kali-bot
+```
+
+### Bug bounty session workflow
+
+```
+1. /session_create name:target-2026
+2. /investigate target:target.com depth:standard
+   OR run specific tools:
+   /recon_auto, /port_scan, /web_audit, /ssl_analysis
+3. /generate_report
+4. Copy report and submit
 ```
 
 ### Daily shutdown
 
 ```bash
-# Stop container when done
 docker compose down
 ```
 
@@ -595,23 +705,17 @@ In VMware: **VM → Suspend**
 ### Verify everything is running
 
 ```bash
-# Ubuntu terminal
 docker ps
 tailscale status
 hostname -I
 sudo systemctl status discord-kali-bot
 ```
 
-```powershell
-# Windows PowerShell
-netsh interface portproxy show all
-```
-
 ---
 
 ## Common Commands
 
-### Docker management (run in Ubuntu)
+### Docker management
 
 ```bash
 docker compose up -d                      # Start Kali MCP server
@@ -623,7 +727,7 @@ docker stats kali-mcp-server              # Resource usage
 docker compose up --build -d              # Rebuild after updates
 ```
 
-### Discord bot management (run in Ubuntu)
+### Discord bot management
 
 ```bash
 sudo systemctl status discord-kali-bot    # Check bot status
@@ -633,33 +737,24 @@ sudo journalctl -u discord-kali-bot -n 50 # View bot logs
 cat ~/kali-mcp/bot_audit.log              # View audit log
 ```
 
-### Network (run in Windows PowerShell)
+### Network (Windows PowerShell)
 
 ```powershell
-netsh interface portproxy show all        # Check proxy rule
-netsh interface portproxy reset           # Remove all proxy rules
-Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50  # Claude logs
+netsh interface portproxy show all
+netsh interface portproxy reset
+Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50
 ```
 
-### Kali security tools (run inside container)
+### Kali tools (inside container)
 
 ```bash
-# Recon
 nmap -sV -T4 target.com
-nmap -sV -p- -T4 target.com
 gobuster dir -u https://target.com -w /usr/share/wordlists/dirb/common.txt
-dnsenum --enum target.com
-
-# Web scanning
 nikto -h https://target.com
-
-# SQL injection
 sqlmap -u 'https://target.com/page?id=1' --dbs
-
-# SSL/TLS
 sslscan target.com
-
-# Save output
+testssl.sh target.com
+searchsploit apache 2.4.49
 nmap -sV target.com > /app/sessions/myscan.txt
 ```
 
@@ -672,7 +767,7 @@ nmap -sV target.com > /app/sessions/myscan.txt
 1. Use the **direct installer** version, not the Store version
 2. Verify mcp-remote: `where.exe mcp-remote`
 3. Check container: `docker ps`
-4. Test SSE endpoint: open `http://localhost:8000/sse` in browser
+4. Test SSE endpoint: `http://localhost:8000/sse`
 5. Check Claude logs: `Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50`
 
 ### Browser shows "connection refused" at localhost:8000
@@ -682,18 +777,11 @@ netsh interface portproxy show all
 netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=192.168.91.132 connectport=8000
 ```
 
-```bash
-# Confirm container is running
-docker ps
-```
-
 ### VM IP changed after reboot
 
 ```bash
 hostname -I   # get new IP
 ```
-
-Update portproxy on Windows:
 
 ```powershell
 netsh interface portproxy reset
@@ -703,32 +791,52 @@ netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 con
 ### Discord bot not responding
 
 ```bash
-# Check service status
 sudo systemctl status discord-kali-bot
-
-# Check logs for errors
 sudo journalctl -u discord-kali-bot -n 50
-
-# Restart if needed
 sudo systemctl restart discord-kali-bot
 ```
 
 ### Discord bot says "Cannot reach MCP server"
 
 ```bash
-# Make sure the Kali container is running
 docker ps
 cd ~/kali-mcp && docker compose up -d
 ```
 
-### Discord bot service fails on boot (container not ready)
+### /investigate or /generate_report says "credit balance too low"
 
-The service waits for Docker but the container itself may not be started. Add this to your startup:
+1. Go to https://console.anthropic.com → **Billing**
+2. Confirm payment is completed and balance is non-zero
+3. If balance shows but still fails — delete and recreate your API key
+4. Update `ANTHROPIC_API_KEY` in `.env`
+5. `sudo systemctl restart discord-kali-bot`
+
+### Slash commands not showing in Discord
+
+Global sync can take up to an hour. To force instant sync, add to `on_ready` in `discord_kali_bot.py`:
+
+```python
+guild = discord.Object(id=YOUR_SERVER_ID)
+tree.copy_global_to(guild=guild)
+await tree.sync(guild=guild)
+```
+
+### Missing tools inside container
 
 ```bash
-# Add to crontab
+docker exec -it kali-mcp-server bash -c "
+apt-get update -q &&
+apt-get install -y dirb exploitdb wordlists &&
+curl -o /usr/local/bin/testssl.sh https://raw.githubusercontent.com/drwetter/testssl.sh/3.2/testssl.sh &&
+chmod +x /usr/local/bin/testssl.sh
+"
+```
+
+### Discord bot service fails on boot
+
+```bash
 crontab -e
-# Add this line:
+# Add:
 @reboot cd /home/YOUR_USERNAME/kali-mcp && docker compose up -d
 ```
 
@@ -744,7 +852,7 @@ sudo systemctl start ssh
 ```bash
 sudo apt update
 docker compose build --no-cache
-df -h   # Check available disk space
+df -h
 ```
 
 ---
@@ -759,10 +867,10 @@ df -h   # Check available disk space
 | SQL injection | sqlmap |
 | Password cracking | john, hashcat |
 | Brute force | hydra |
-| SSL/TLS | sslscan, openssl |
+| SSL/TLS | sslscan, testssl.sh, openssl |
 | Wireless | aircrack-ng |
-| Exploitation | metasploit-framework |
-| Recon | sublist3r, whois |
+| Exploitation | metasploit-framework, searchsploit |
+| Recon | sublist3r, whois, subfinder, amass |
 
 ---
 
@@ -783,3 +891,4 @@ This setup is for **authorized security testing only**.
 - [mcp-remote](https://www.npmjs.com/package/mcp-remote) — SSE to stdio bridge for Claude Desktop
 - [Tailscale](https://tailscale.com) — Encrypted remote access
 - [discord.py](https://discordpy.readthedocs.io) — Discord bot framework
+- [Anthropic Claude](https://anthropic.com) — AI recon agent and report writer

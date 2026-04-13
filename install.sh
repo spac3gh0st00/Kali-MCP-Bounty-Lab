@@ -166,16 +166,58 @@ info "Installing Python dependencies…"
 success "Python environment ready."
 
 # ═════════════════════════════════════════════════════════════════════════════
-header "Step 8 — /health endpoint check"
+header "Step 8 — Patch /health endpoint into server.py"
 # ═════════════════════════════════════════════════════════════════════════════
-info "Checking /health endpoint…"
+info "Checking if /health route already exists in server.py…"
+if grep -q "health_check" "$INSTALL_DIR/kali_mcp_server/server.py"; then
+    success "/health route already present in server.py — skipping patch."
+else
+    info "Patching server.py to add /health endpoint…"
+    python3 - << 'PYEOF'
+import sys, os
+path = os.path.expanduser('~/kali-mcp/kali_mcp_server/server.py')
+content = open(path).read()
+
+health_func = '''
+async def health_check(request):
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "healthy", "service": "kali-mcp"})
+
+'''
+
+if 'health_check' in content:
+    print("Already patched — skipping.")
+    sys.exit(0)
+
+content = content.replace(
+    'Route("/sse"',
+    'Route("/health", endpoint=health_check),\n        Route("/sse"'
+)
+content = content.replace(
+    'async def handle_sse_connection',
+    health_func + 'async def handle_sse_connection'
+)
+
+open(path, 'w').write(content)
+print("server.py patched successfully.")
+PYEOF
+
+    info "Rebuilding container with /health route…"
+    cd "$INSTALL_DIR"
+    sg docker -c "docker compose down"
+    sg docker -c "docker compose build"
+    sg docker -c "docker compose up -d"
+    info "Waiting for container to start…"
+    sleep 6
+fi
+
+info "Verifying /health endpoint…"
 sleep 2
 if curl -sf http://localhost:8000/health | grep -q healthy; then
     success "/health endpoint is up."
 else
     warn "Could not reach http://localhost:8000/health."
-    warn "If server.py doesn't have the /health route, follow the README to add it,"
-    warn "then run: cd $INSTALL_DIR && docker compose build && docker compose up -d"
+    warn "Check container logs: docker logs kali-mcp-server"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════

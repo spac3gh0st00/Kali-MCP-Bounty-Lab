@@ -547,35 +547,47 @@ Cost: ~$0.03–0.10 per report
 
 **Step 27 — Add the `/health` endpoint to the MCP server**
 
-Edit `~/kali-mcp/kali_mcp_server/server.py`. Inside `start_sse_server()`, add above `handle_sse_connection`:
-
-```python
-async def health_check(request):
-    from starlette.responses import JSONResponse
-    return JSONResponse({"status": "healthy", "service": "kali-mcp"})
-```
-
-Add to the Starlette routes list:
-
-```python
-starlette_app = Starlette(
-    debug=debug,
-    routes=[
-        Route("/health", endpoint=health_check),
-        Route("/sse", endpoint=handle_sse_connection),
-        Mount("/messages/", app=sse_transport.handle_post_message),
-    ],
-)
-```
-
-Rebuild:
+Run this script — it patches `server.py` automatically, then rebuilds and verifies the endpoint:
 
 ```bash
 cd ~/kali-mcp
-docker compose down && docker compose build && docker compose up -d
-curl http://localhost:8000/health
+docker compose down
+
+python3 - << 'EOF'
+import re
+
+path = 'kali_mcp_server/server.py'
+content = open(path).read()
+
+health_func = '''
+async def health_check(request):
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "healthy", "service": "kali-mcp"})
+
+'''
+
+content = content.replace(
+    'Route("/sse"',
+    'Route("/health", endpoint=health_check),\n        Route("/sse"'
+)
+
+content = content.replace(
+    'async def handle_sse_connection',
+    health_func + 'async def handle_sse_connection'
+)
+
+open(path, 'w').write(content)
+print("server.py patched successfully")
+EOF
+
+docker compose build
+docker compose up -d
+sleep 5
+curl -s http://localhost:8000/health
 # Expected: {"status":"healthy","service":"kali-mcp"}
 ```
+
+> If you prefer to edit manually: add a `health_check` function that returns `JSONResponse({"status": "healthy", "service": "kali-mcp"})` above `handle_sse_connection` in `server.py`, then add `Route("/health", endpoint=health_check)` as the first entry in the Starlette routes list.
 
 **Step 28 — Install kalibot-monitor as a background service**
 
@@ -902,8 +914,9 @@ This setup is for **authorised security testing only**.
 ---
 
 ## 📄 Credits
+
 - [BsidesMCPDemo](https://github.com/kannanprabu/BsidesMCPDemo) by Kannan Prabu Ramamoorthy — the BSides San Diego workshop demo that inspired this project
-- [kali-mcp](https://github.com/k3nn3dy-ai/kali-mcp) by k3nn3dy-ai — Kali Linux Docker MCP server
+- [kali-mcp](https://github.com/k3nn3dy-ai/kali-mcp) by k3nn3dy-ai — Kali Linux Docker MCP server and tool implementations
 - [mcp-remote](https://www.npmjs.com/package/mcp-remote) — SSE to stdio bridge for Claude Desktop
 - [Tailscale](https://tailscale.com) — Encrypted remote access
 - [discord.py](https://discordpy.readthedocs.io) — Discord bot framework

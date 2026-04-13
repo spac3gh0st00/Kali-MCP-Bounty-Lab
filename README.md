@@ -902,7 +902,7 @@ This setup is for **authorised security testing only**.
 ---
 
 ## 📄 Credits
-
+- [BsidesMCPDemo](https://github.com/kannanprabu/BsidesMCPDemo) by Kannan Prabu Ramamoorthy — the BSides San Diego workshop demo that inspired this project
 - [kali-mcp](https://github.com/k3nn3dy-ai/kali-mcp) by k3nn3dy-ai — Kali Linux Docker MCP server
 - [mcp-remote](https://www.npmjs.com/package/mcp-remote) — SSE to stdio bridge for Claude Desktop
 - [Tailscale](https://tailscale.com) — Encrypted remote access

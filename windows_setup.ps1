@@ -130,11 +130,21 @@ if ($claudeInstalled) {
     }
 
     if (-not $claudeDone) {
-        Write-Warn "Opening https://claude.ai/download in your browser."
-        Write-Warn "IMPORTANT: Use the DIRECT installer - NOT the Microsoft Store version."
-        Write-Warn "The Store version does not support MCP connections."
-        Start-Process "https://claude.ai/download"
-        Read-Host "`nPress Enter once Claude Desktop is installed to continue"
+        try {
+            $claudeUrl  = "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+            $claudePath = "$env:TEMP\Claude-Setup-x64.exe"
+            Write-Info "Downloading Claude Desktop direct installer..."
+            Invoke-WebRequest -Uri $claudeUrl -OutFile $claudePath -UseBasicParsing
+            Write-Info "Running installer (follow the prompts)..."
+            Start-Process -FilePath $claudePath -Wait
+            Remove-Item $claudePath -Force -ErrorAction SilentlyContinue
+            Write-OK "Claude Desktop installation complete."
+        } catch {
+            Write-Warn "Automatic download failed: $_"
+            Write-Warn "Download manually from this direct link (NOT the Store):"
+            Write-Warn "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+            Read-Host "`nPress Enter once Claude Desktop is installed to continue"
+        }
     }
 }
 
@@ -150,7 +160,8 @@ if (-not ($vmIp -match '^\d{1,3}(\.\d{1,3}){3}$')) {
 # =============================================================================
 Write-Header "Step 5 - Hyper-V / hypervisor check"
 # =============================================================================
-$hvPolicy = (bcdedit /enum '{current}' | Select-String 'hypervisorlaunchtype').ToString()
+$hvRaw    = bcdedit /enum '{current}' | Select-String 'hypervisorlaunchtype'
+$hvPolicy = if ($hvRaw) { $hvRaw.ToString() } else { '' }
 if ($hvPolicy -match 'Auto') {
     Write-Warn "Hyper-V hypervisor is active. This may conflict with VMware."
     $disable = Read-Host "Disable it now? VMware will work better. (y/N)"

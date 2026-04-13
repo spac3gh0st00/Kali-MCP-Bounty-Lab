@@ -1,5 +1,5 @@
 # =============================================================================
-#  KaliBot — Windows Host / VM Setup
+#  KaliBot - Windows Host / VM Setup
 #  https://github.com/spac3gh0st00/Kali-MCP-Bounty-Lab
 #
 #  Run in PowerShell as Administrator on a fresh Windows machine or VM:
@@ -15,12 +15,14 @@
 
 $ErrorActionPreference = "Stop"
 
-function Write-Header { param($text)
-    Write-Host "`n━━━ $text ━━━" -ForegroundColor Cyan
+function Write-Header {
+    param($text)
+    Write-Host ""
+    Write-Host "--- $text ---" -ForegroundColor Cyan
 }
-function Write-OK    { param($text) Write-Host "[✓] $text" -ForegroundColor Green  }
-function Write-Info  { param($text) Write-Host "[*] $text" -ForegroundColor White  }
-function Write-Warn  { param($text) Write-Host "[!] $text" -ForegroundColor Yellow }
+function Write-OK   { param($text) Write-Host "[OK] $text"   -ForegroundColor Green  }
+function Write-Info { param($text) Write-Host "[*]  $text"   -ForegroundColor White  }
+function Write-Warn { param($text) Write-Host "[!]  $text"   -ForegroundColor Yellow }
 
 # Helper: refresh PATH in the current session after an install
 function Update-SessionPath {
@@ -29,16 +31,16 @@ function Update-SessionPath {
     $env:PATH    = "$machinePath;$userPath"
 }
 
-# Helper: check if winget is available
+# Check if winget is available
 $wingetAvailable = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 1 — Node.js LTS"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 1 - Node.js LTS"
+# =============================================================================
 if (Get-Command node -ErrorAction SilentlyContinue) {
     Write-OK "Node.js already installed: $(node --version)"
 } else {
-    Write-Info "Node.js not found — installing..."
+    Write-Info "Node.js not found - installing..."
 
     $nodeInstalled = $false
 
@@ -51,11 +53,11 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
             $nodeInstalled = $true
             Write-OK "Node.js installed via winget."
         } else {
-            Write-Warn "winget install failed (exit $LASTEXITCODE) — falling back to direct download."
+            Write-Warn "winget install failed (exit $LASTEXITCODE) - falling back to direct download."
         }
     }
 
-    # Fall back: query nodejs.org for latest LTS version and download the MSI
+    # Fall back: query nodejs.org for latest LTS and download the MSI
     if (-not $nodeInstalled) {
         try {
             Write-Info "Fetching latest LTS version from nodejs.org..."
@@ -80,9 +82,9 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
     }
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 2 — mcp-remote"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 2 - mcp-remote"
+# =============================================================================
 if (Get-Command mcp-remote -ErrorAction SilentlyContinue) {
     Write-OK "mcp-remote already installed."
 } elseif (Get-Command npm -ErrorAction SilentlyContinue) {
@@ -95,15 +97,15 @@ if (Get-Command mcp-remote -ErrorAction SilentlyContinue) {
         Write-Warn "Try manually: npm install -g mcp-remote"
     }
 } else {
-    Write-Warn "npm not found — Node.js may need a restart to appear in PATH."
+    Write-Warn "npm not found - Node.js may need a restart to appear in PATH."
     Write-Warn "After rebooting, run: npm install -g mcp-remote"
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 3 — Claude Desktop"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 3 - Claude Desktop"
+# =============================================================================
 
-# Detect existing install by checking registry uninstall entries
+# Detect existing install via registry
 $claudeInstalled = Get-ItemProperty `
     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
     -ErrorAction SilentlyContinue |
@@ -112,11 +114,10 @@ $claudeInstalled = Get-ItemProperty `
 if ($claudeInstalled) {
     Write-OK "Claude Desktop already installed."
 } else {
-    Write-Info "Claude Desktop not found — installing..."
+    Write-Info "Claude Desktop not found - installing..."
 
     $claudeDone = $false
 
-    # Try winget first
     if ($wingetAvailable) {
         Write-Info "Trying winget..."
         winget install Anthropic.Claude --silent --accept-source-agreements --accept-package-agreements
@@ -124,47 +125,46 @@ if ($claudeInstalled) {
             $claudeDone = $true
             Write-OK "Claude Desktop installed via winget."
         } else {
-            Write-Warn "winget install failed (exit $LASTEXITCODE) — falling back to browser download."
+            Write-Warn "winget install failed (exit $LASTEXITCODE) - falling back to browser download."
         }
     }
 
-    # Fall back: open the download page and wait for the user to install manually
     if (-not $claudeDone) {
         Write-Warn "Opening https://claude.ai/download in your browser."
-        Write-Warn "IMPORTANT: Use the DIRECT installer — NOT the Microsoft Store version."
+        Write-Warn "IMPORTANT: Use the DIRECT installer - NOT the Microsoft Store version."
         Write-Warn "The Store version does not support MCP connections."
         Start-Process "https://claude.ai/download"
-        Read-Host "`n  Press Enter once Claude Desktop is installed to continue"
+        Read-Host "`nPress Enter once Claude Desktop is installed to continue"
     }
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 4 — Ubuntu VM IP"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 4 - Ubuntu VM IP"
+# =============================================================================
 Write-Info "Run 'hostname -I' inside your Ubuntu VM and enter the IP below."
-$vmIp = Read-Host "  Ubuntu VM IP address (e.g. 192.168.91.132)"
+$vmIp = Read-Host "Ubuntu VM IP address (e.g. 192.168.91.132)"
 if (-not ($vmIp -match '^\d{1,3}(\.\d{1,3}){3}$')) {
-    Write-Warn "IP looks odd — continuing anyway."
+    Write-Warn "IP looks odd - continuing anyway."
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 5 — Hyper-V / hypervisor check"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 5 - Hyper-V / hypervisor check"
+# =============================================================================
 $hvPolicy = (bcdedit /enum '{current}' | Select-String 'hypervisorlaunchtype').ToString()
 if ($hvPolicy -match 'Auto') {
     Write-Warn "Hyper-V hypervisor is active. This may conflict with VMware."
-    $disable = Read-Host "  Disable it now? VMware will work better. (y/N)"
+    $disable = Read-Host "Disable it now? VMware will work better. (y/N)"
     if ($disable -match '^[Yy]') {
         bcdedit /set hypervisorlaunchtype off | Out-Null
         Write-Warn "Hypervisor disabled. A restart is required before VMware will start."
     }
 } else {
-    Write-OK "Hypervisor not active — no conflict."
+    Write-OK "Hypervisor not active - no conflict."
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 6 — netsh portproxy (localhost:8000 → VM:8000)"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 6 - netsh portproxy (localhost:8000 -> VM:8000)"
+# =============================================================================
 
 # Remove any existing rule on port 8000 first
 $existing = netsh interface portproxy show v4tov4 |
@@ -181,9 +181,9 @@ netsh interface portproxy add v4tov4 `
 Write-OK "portproxy rule added:"
 netsh interface portproxy show v4tov4
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 7 — Windows Firewall loopback rule"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 7 - Windows Firewall loopback rule"
+# =============================================================================
 $ruleName = "KaliMCP-loopback-8000"
 $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
 if ($existingRule) {
@@ -200,9 +200,9 @@ if ($existingRule) {
     Write-OK "Firewall rule '$ruleName' created."
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 8 — Claude Desktop MCP config"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 8 - Claude Desktop MCP config"
+# =============================================================================
 $configDir  = "$env:APPDATA\Claude"
 $configFile = "$configDir\claude_desktop_config.json"
 
@@ -220,25 +220,25 @@ if (Test-Path $configFile) {
     try {
         $existingJson = Get-Content $configFile -Raw | ConvertFrom-Json
     } catch {
-        Write-Warn "  Existing config is not valid JSON — backing up and replacing."
+        Write-Warn "Existing config is not valid JSON - backing up and replacing."
         Copy-Item $configFile "$configFile.bak"
         $existingJson = [PSCustomObject]@{ mcpServers = [PSCustomObject]@{} }
     }
 
-    # Ensure mcpServers key exists (config may be {} with no mcpServers key)
+    # Ensure mcpServers key exists
     if (-not $existingJson.PSObject.Properties['mcpServers']) {
         $existingJson | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([PSCustomObject]@{})
     }
 
     if ($existingJson.mcpServers.PSObject.Properties['kali']) {
-        Write-OK "  'kali' MCP entry already present — no changes made."
+        Write-OK "'kali' MCP entry already present - no changes made."
     } else {
-        Write-Info "  Merging 'kali' into existing mcpServers (all other entries preserved)..."
+        Write-Info "Merging 'kali' into existing mcpServers (all other entries preserved)..."
         Copy-Item $configFile "$configFile.bak"
         $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'kali' -Value $kaliEntry
         $merged = $existingJson | ConvertTo-Json -Depth 10
         [System.IO.File]::WriteAllText($configFile, $merged)
-        Write-OK "  Config updated."
+        Write-OK "Config updated."
     }
 } else {
     $newConfig = [PSCustomObject]@{
@@ -247,14 +247,14 @@ if (Test-Path $configFile) {
         }
     }
     $newJson = $newConfig | ConvertTo-Json -Depth 10
-    # WriteAllText writes BOM-less UTF-8; Set-Content -Encoding UTF8 adds a BOM in PS 5.1
+    # WriteAllText writes BOM-less UTF-8 (Set-Content -Encoding UTF8 adds a BOM in PS 5.1)
     [System.IO.File]::WriteAllText($configFile, $newJson)
     Write-OK "Claude Desktop config written to $configFile"
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
-Write-Header "Step 9 — Connectivity test"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
+Write-Header "Step 9 - Connectivity test"
+# =============================================================================
 Write-Info "Testing http://localhost:8000/health ..."
 try {
     $resp = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 5 -UseBasicParsing
@@ -268,18 +268,18 @@ try {
     Write-Warn "Make sure the Ubuntu VM is running and the Docker container is up."
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 Write-Header "Done"
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 Write-Host ""
-Write-Host "  Node.js     : $(if (Get-Command node -ErrorAction SilentlyContinue) { node --version } else { 'not detected in PATH — may need a restart' })"
-Write-Host "  portproxy   : localhost:8000 → ${vmIp}:8000"
-Write-Host "  Claude cfg  : $configFile"
+Write-Host "  Node.js   : $(if (Get-Command node -ErrorAction SilentlyContinue) { node --version } else { 'not in PATH - may need a restart' })"
+Write-Host "  portproxy : localhost:8000 -> ${vmIp}:8000"
+Write-Host "  Claude cfg: $configFile"
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor White
-Write-Host "  1. Restart Claude Desktop (system tray → right-click → Quit, then relaunch)."
-Write-Host "  2. Click [+] in Claude chat → Connectors → you should see 'kali' with a blue toggle."
+Write-Host "  1. Restart Claude Desktop (system tray -> right-click -> Quit, then relaunch)."
+Write-Host "  2. Click [+] in Claude chat -> Connectors -> you should see 'kali' with a blue toggle."
 Write-Host "  3. Ask Claude: 'Can you run nmap on 127.0.0.1?'"
 Write-Host ""
-Write-Host "⚠  Authorised testing only. Hunt legally, hunt responsibly." -ForegroundColor Yellow
+Write-Host "[!] Authorised testing only. Hunt legally, hunt responsibly." -ForegroundColor Yellow
 Write-Host ""

@@ -293,25 +293,20 @@ echo ""
 sg docker -c "docker ps --filter name=kali-mcp-server --format '  Container: {{.Names}} — {{.Status}}'" 2>/dev/null || true
 
 echo ""
-echo -e "${BOLD}Remaining manual steps (Windows host):${NC}"
+echo -e "${BOLD}Remaining manual steps (Windows side):${NC}"
 echo ""
-echo "  1. Run windows_setup.ps1 as Administrator in PowerShell"
-echo "     (sets up netsh portproxy to $VM_IP:8000)"
+echo "  1. Copy windows_setup.ps1 to your Windows machine or VM"
 echo ""
-echo "  2. Install Node.js LTS from https://nodejs.org"
-echo "     then: npm install -g mcp-remote"
+echo "  2. Open PowerShell as Administrator and run:"
+echo "       Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass"
+echo "       .\\windows_setup.ps1"
 echo ""
-echo "  3. Add to %APPDATA%\\Claude\\claude_desktop_config.json:"
-echo '     {
-       "mcpServers": {
-         "kali": {
-           "command": "mcp-remote",
-           "args": ["http://localhost:8000/sse"]
-         }
-       }
-     }'
+echo "     The script handles everything automatically:"
+echo "     Node.js, mcp-remote, Claude Desktop, portproxy, firewall, MCP config"
 echo ""
-echo "  4. Restart Claude Desktop (system tray → Quit, then relaunch)."
+echo "  3. When prompted, enter this VM's IP: $VM_IP"
+echo ""
+echo "  4. Restart Claude Desktop when the script finishes."
 echo ""
 echo -e "${YELLOW}⚠  Authorised testing only. Hunt legally, hunt responsibly.${NC}"
 echo ""

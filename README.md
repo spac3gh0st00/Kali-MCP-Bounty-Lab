@@ -753,7 +753,8 @@ Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50
 
 ## 🔧 Troubleshooting
 
-**Claude Desktop shows "MCP server could not be loaded"**
+<details>
+<summary><strong>Claude Desktop shows "MCP server could not be loaded"</strong></summary>
 
 1. Use the **direct installer** — not the Microsoft Store version
 2. Verify mcp-remote is installed: `where.exe mcp-remote`
@@ -761,7 +762,10 @@ Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50
 4. Test SSE endpoint in browser: `http://localhost:8000/sse`
 5. Check Claude logs: `Get-Content "$env:APPDATA\Claude\logs\main.log" -Tail 50`
 
-**Browser shows "connection refused" at localhost:8000**
+</details>
+
+<details>
+<summary><strong>Browser shows "connection refused" at localhost:8000</strong></summary>
 
 ```powershell
 netsh interface portproxy show all
@@ -769,7 +773,10 @@ netsh interface portproxy show all
 netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=<VM-IP> connectport=8000
 ```
 
-**VM IP changed after reboot**
+</details>
+
+<details>
+<summary><strong>VM IP changed after reboot</strong></summary>
 
 ```bash
 hostname -I   # get new IP
@@ -780,7 +787,7 @@ netsh interface portproxy reset
 netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8000 connectaddress=<new-ip> connectport=8000
 ```
 
-To prevent this, assign a static IP inside Ubuntu via Netplan:
+To prevent this permanently, assign a static IP inside Ubuntu via Netplan:
 
 ```bash
 sudo nano /etc/netplan/00-installer-config.yaml
@@ -802,7 +809,10 @@ network:
 sudo netplan apply
 ```
 
-**Services show as "activating" right after install**
+</details>
+
+<details>
+<summary><strong>Services show as "activating" right after install</strong></summary>
 
 Both services have a 10-second startup delay (`ExecStartPre=/bin/sleep 10`) to let Docker fully start first. Wait a few seconds then check again:
 
@@ -810,7 +820,10 @@ Both services have a 10-second startup delay (`ExecStartPre=/bin/sleep 10`) to l
 sudo systemctl status discord-kali-bot kalibot-monitor
 ```
 
-**Discord bot not responding to slash commands**
+</details>
+
+<details>
+<summary><strong>Discord bot not responding to slash commands</strong></summary>
 
 ```bash
 sudo journalctl -u discord-kali-bot -n 50
@@ -825,7 +838,10 @@ tree.copy_global_to(guild=guild)
 await tree.sync(guild=guild)
 ```
 
-**Health monitor not sending Discord alerts**
+</details>
+
+<details>
+<summary><strong>Health monitor not sending Discord alerts</strong></summary>
 
 ```bash
 grep -c "DISCORD_WEBHOOK_URL" ~/kali-mcp/.env  # Should return 1
@@ -833,7 +849,10 @@ sudo journalctl -u kalibot-monitor -n 30
 sudo systemctl restart kalibot-monitor
 ```
 
-**/health endpoint returns "Not Found"**
+</details>
+
+<details>
+<summary><strong>/health endpoint returns "Not Found"</strong></summary>
 
 Edits to `server.py` require a container rebuild:
 
@@ -842,7 +861,10 @@ cd ~/kali-mcp && docker compose down && docker compose build && docker compose u
 curl http://localhost:8000/health
 ```
 
-**Missing tools inside container**
+</details>
+
+<details>
+<summary><strong>Missing tools inside container</strong></summary>
 
 ```bash
 docker exec -it kali-mcp-server bash -c "
@@ -853,13 +875,18 @@ chmod +x /usr/local/bin/testssl.sh
 "
 ```
 
-**Docker build fails**
+</details>
+
+<details>
+<summary><strong>Docker build fails</strong></summary>
 
 ```bash
 sudo apt update
 docker compose build --no-cache
 df -h   # Need at least 10GB free
 ```
+
+</details>
 
 ---
 

@@ -1,312 +1,286 @@
-#!/usr/bin/env bash
 # =============================================================================
-#  KaliBot — Kali MCP Bounty Lab  |  Ubuntu VM Installer
+#  KaliBot - Windows Host / VM Setup
 #  https://github.com/spac3gh0st00/Kali-MCP-Bounty-Lab
 #
-#  Run as your normal (non-root) user inside the Ubuntu VM:
-#    chmod +x install.sh && ./install.sh
+#  Run in PowerShell as Administrator on a fresh Windows machine or VM:
+#    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+#    .\windows_setup.ps1
+#
+#  Handles everything automatically:
+#    Node.js LTS, mcp-remote, Claude Desktop, netsh portproxy,
+#    Windows Firewall rule, Claude Desktop MCP config
 # =============================================================================
 
-set -euo pipefail
+#Requires -RunAsAdministrator
 
-# ── Colours ──────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+$ErrorActionPreference = "Stop"
 
-info()    { echo -e "${CYAN}[*]${NC} $*"; }
-success() { echo -e "${GREEN}[✓]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
-error()   { echo -e "${RED}[✗]${NC} $*"; exit 1; }
-header()  { echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${NC}"; }
+function Write-Header {
+    param($text)
+    Write-Host ""
+    Write-Host "--- $text ---" -ForegroundColor Cyan
+}
+function Write-OK   { param($text) Write-Host "[OK] $text"   -ForegroundColor Green  }
+function Write-Info { param($text) Write-Host "[*]  $text"   -ForegroundColor White  }
+function Write-Warn { param($text) Write-Host "[!]  $text"   -ForegroundColor Yellow }
 
-# ── Sanity checks ─────────────────────────────────────────────────────────────
-[[ $EUID -eq 0 ]] && error "Do NOT run this as root. Run as your normal user."
-command -v lsb_release &>/dev/null || sudo apt-get install -y -q lsb-release
+# Helper: refresh PATH in the current session after an install
+function Update-SessionPath {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    $userPath    = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    $env:PATH    = "$machinePath;$userPath"
+}
 
-OS=$(lsb_release -si)
-[[ "$OS" == "Ubuntu" ]] || warn "Tested on Ubuntu 24.04 — your OS is $OS, YMMV."
+# Check if winget is available
+$wingetAvailable = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 
-INSTALL_DIR="$HOME/kali-mcp"
-VENV_DIR="$INSTALL_DIR/venv"
-SERVICE_USER="$USER"
+# =============================================================================
+Write-Header "Step 1 - Node.js LTS"
+# =============================================================================
+if (Get-Command node -ErrorAction SilentlyContinue) {
+    Write-OK "Node.js already installed: $(node --version)"
+} else {
+    Write-Info "Node.js not found - installing..."
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 1 — Collect secrets"
-# ═════════════════════════════════════════════════════════════════════════════
-echo ""
-echo "  You'll need four values. Press Enter to skip any you don't have yet"
-echo "  (you can fill them in later by editing $INSTALL_DIR/.env)."
-echo ""
+    $nodeInstalled = $false
 
-read -rp "  Discord Bot Token           : " DISCORD_TOKEN
-read -rp "  Discord Allowed User ID     : " ALLOWED_USER_ID
-read -rp "  Anthropic API Key (sk-ant-…): " ANTHROPIC_API_KEY
-read -rp "  Discord Webhook URL         : " DISCORD_WEBHOOK_URL
+    # Try winget first (available on Windows 10 1809+ and all Windows 11)
+    if ($wingetAvailable) {
+        Write-Info "Trying winget..."
+        winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) {
+            Update-SessionPath
+            $nodeInstalled = $true
+            Write-OK "Node.js installed via winget."
+        } else {
+            Write-Warn "winget install failed (exit $LASTEXITCODE) - falling back to direct download."
+        }
+    }
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 2 — System update & base packages"
-# ═════════════════════════════════════════════════════════════════════════════
-info "Updating package lists…"
-sudo apt-get update -q
+    # Fall back: query nodejs.org for latest LTS and download the MSI
+    if (-not $nodeInstalled) {
+        try {
+            Write-Info "Fetching latest LTS version from nodejs.org..."
+            $releases = Invoke-RestMethod "https://nodejs.org/dist/index.json" -UseBasicParsing
+            $lts      = $releases | Where-Object { $_.lts } | Select-Object -First 1
+            $version  = $lts.version
+            $msiUrl   = "https://nodejs.org/dist/$version/node-$version-x64.msi"
+            $msiPath  = "$env:TEMP\node-lts.msi"
 
-info "Installing prerequisites…"
-sudo apt-get install -y -q \
-    ca-certificates curl gnupg lsb-release git \
-    python3 python3-pip python3.12-venv ufw
+            Write-Info "Downloading Node.js $version..."
+            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+            Write-Info "Installing (this may take a minute)..."
+            Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /quiet /norestart" -Wait
+            Update-SessionPath
+            Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+            $nodeInstalled = $true
+            Write-OK "Node.js $version installed."
+        } catch {
+            Write-Warn "Automatic Node.js install failed: $_"
+            Write-Warn "Please install Node.js LTS manually from https://nodejs.org then re-run this script."
+        }
+    }
+}
 
-success "Base packages ready."
+# =============================================================================
+Write-Header "Step 2 - mcp-remote"
+# =============================================================================
+if (Get-Command mcp-remote -ErrorAction SilentlyContinue) {
+    Write-OK "mcp-remote already installed."
+} elseif (Get-Command npm -ErrorAction SilentlyContinue) {
+    Write-Info "Installing mcp-remote globally..."
+    npm install -g mcp-remote
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "mcp-remote installed."
+    } else {
+        Write-Warn "npm install exited with code $LASTEXITCODE."
+        Write-Warn "Try manually: npm install -g mcp-remote"
+    }
+} else {
+    Write-Warn "npm not found - Node.js may need a restart to appear in PATH."
+    Write-Warn "After rebooting, run: npm install -g mcp-remote"
+}
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 3 — Docker Engine"
-# ═════════════════════════════════════════════════════════════════════════════
-if command -v docker &>/dev/null; then
-    success "Docker already installed ($(docker --version | head -1))."
-else
-    info "Adding Docker's official GPG key and repo…"
-    sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+# =============================================================================
+Write-Header "Step 3 - Claude Desktop"
+# =============================================================================
 
-    # printf avoids any shell continuation whitespace leaking into the deb line
-    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\n' \
-        "$(dpkg --print-architecture)" "$(lsb_release -cs)" \
-        | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+# Detect existing install via registry
+$claudeInstalled = Get-ItemProperty `
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+    -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -like "*Claude*" }
 
-    sudo apt-get update -q
-    sudo apt-get install -y -q \
-        docker-ce docker-ce-cli containerd.io \
-        docker-buildx-plugin docker-compose-plugin
+if ($claudeInstalled) {
+    Write-OK "Claude Desktop already installed."
+} else {
+    Write-Info "Claude Desktop not found - installing..."
 
-    success "Docker installed."
-fi
+    $claudeDone = $false
 
-# Add current user to docker group (permanent after re-login; sg handles this session)
-if ! groups "$USER" | grep -q docker; then
-    info "Adding $USER to the docker group…"
-    sudo usermod -aG docker "$USER"
-    warn "Docker group added. The installer uses 'sg docker' so it works right now,"
-    warn "but future terminals will need a re-login or 'newgrp docker'."
-fi
+    if ($wingetAvailable) {
+        Write-Info "Trying winget..."
+        winget install Anthropic.Claude --silent --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) {
+            $claudeDone = $true
+            Write-OK "Claude Desktop installed via winget."
+        } else {
+            Write-Warn "winget install failed (exit $LASTEXITCODE) - falling back to browser download."
+        }
+    }
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 4 — Clone kali-mcp repository"
-# ═════════════════════════════════════════════════════════════════════════════
-if [[ -d "$INSTALL_DIR/.git" ]]; then
-    info "Repo already exists at $INSTALL_DIR — pulling latest…"
-    git -C "$INSTALL_DIR" pull
-else
-    info "Cloning into $INSTALL_DIR…"
-    git clone https://github.com/k3nn3dy-ai/kali-mcp.git "$INSTALL_DIR"
-fi
-success "Repo ready at $INSTALL_DIR"
+    if (-not $claudeDone) {
+        Write-Warn "Opening https://claude.ai/download in your browser."
+        Write-Warn "IMPORTANT: Use the DIRECT installer - NOT the Microsoft Store version."
+        Write-Warn "The Store version does not support MCP connections."
+        Start-Process "https://claude.ai/download"
+        Read-Host "`nPress Enter once Claude Desktop is installed to continue"
+    }
+}
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 5 — Create .env file"
-# ═════════════════════════════════════════════════════════════════════════════
-ENV_FILE="$INSTALL_DIR/.env"
+# =============================================================================
+Write-Header "Step 4 - Ubuntu VM IP"
+# =============================================================================
+Write-Info "Run 'hostname -I' inside your Ubuntu VM and enter the IP below."
+$vmIp = Read-Host "Ubuntu VM IP address (e.g. 192.168.91.132)"
+if (-not ($vmIp -match '^\d{1,3}(\.\d{1,3}){3}$')) {
+    Write-Warn "IP looks odd - continuing anyway."
+}
 
-if [[ -f "$ENV_FILE" ]]; then
-    warn ".env already exists — backing up to .env.bak"
-    cp "$ENV_FILE" "${ENV_FILE}.bak"
-fi
+# =============================================================================
+Write-Header "Step 5 - Hyper-V / hypervisor check"
+# =============================================================================
+$hvRaw    = bcdedit /enum '{current}' | Select-String 'hypervisorlaunchtype'
+$hvPolicy = if ($hvRaw) { $hvRaw.ToString() } else { '' }
+if ($hvPolicy -match 'Auto') {
+    Write-Warn "Hyper-V hypervisor is active. This may conflict with VMware."
+    $disable = Read-Host "Disable it now? VMware will work better. (y/N)"
+    if ($disable -match '^[Yy]') {
+        bcdedit /set hypervisorlaunchtype off | Out-Null
+        Write-Warn "Hypervisor disabled. A restart is required before VMware will start."
+    }
+} else {
+    Write-OK "Hypervisor not active - no conflict."
+}
 
-cat > "$ENV_FILE" <<EOF
-DISCORD_TOKEN=${DISCORD_TOKEN}
-ALLOWED_USER_ID=${ALLOWED_USER_ID}
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-EOF
+# =============================================================================
+Write-Header "Step 6 - netsh portproxy (localhost:8000 -> VM:8000)"
+# =============================================================================
 
-chmod 600 "$ENV_FILE"
-echo ".env" >> "$HOME/.gitignore" 2>/dev/null || true
-success ".env written with permissions 600."
+# Remove any existing rule on port 8000 first
+$existing = netsh interface portproxy show v4tov4 |
+    Select-String '127.0.0.1\s+8000'
+if ($existing) {
+    Write-Info "Removing existing portproxy rule on port 8000..."
+    netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=8000 | Out-Null
+}
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 6 — Build & start the Kali Docker container"
-# ═════════════════════════════════════════════════════════════════════════════
-cd "$INSTALL_DIR"
+netsh interface portproxy add v4tov4 `
+    listenaddress=127.0.0.1 listenport=8000 `
+    connectaddress=$vmIp    connectport=8000 | Out-Null
 
-info "Building Docker image (this can take 10–20 min on first run)…"
-# sg runs docker commands under the docker group without requiring a re-login
-sg docker -c "docker compose build"
+Write-OK "portproxy rule added:"
+netsh interface portproxy show v4tov4
 
-info "Starting container in detached mode…"
-sg docker -c "docker compose up -d"
+# =============================================================================
+Write-Header "Step 7 - Windows Firewall loopback rule"
+# =============================================================================
+$ruleName = "KaliMCP-loopback-8000"
+$existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+if ($existingRule) {
+    Write-Info "Firewall rule '$ruleName' already exists."
+} else {
+    New-NetFirewallRule `
+        -DisplayName $ruleName `
+        -Direction   Inbound `
+        -Protocol    TCP `
+        -LocalPort   8000 `
+        -Action      Allow `
+        -Profile     @("Private", "Domain") `
+        | Out-Null
+    Write-OK "Firewall rule '$ruleName' created."
+}
 
-info "Waiting for container to initialise…"
-sleep 6
-sg docker -c "docker ps --filter name=kali-mcp-server --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+# =============================================================================
+Write-Header "Step 8 - Claude Desktop MCP config"
+# =============================================================================
+$configDir  = "$env:APPDATA\Claude"
+$configFile = "$configDir\claude_desktop_config.json"
 
-# ── Install supplementary tools inside the container ─────────────────────────
-info "Installing supplementary tools inside the container…"
-sg docker -c "
-docker exec kali-mcp-server bash -c '
-apt-get update -q &&
-apt-get install -y -q dirb exploitdb wordlists &&
-if ! command -v testssl.sh &>/dev/null; then
-    curl -sfo /usr/local/bin/testssl.sh \
-        https://raw.githubusercontent.com/drwetter/testssl.sh/3.2/testssl.sh &&
-    chmod +x /usr/local/bin/testssl.sh
-fi
-'
-" || warn "Supplementary tool install had errors — run it manually if tools are missing."
+if (-not (Test-Path $configDir)) {
+    New-Item -ItemType Directory -Path $configDir | Out-Null
+}
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 7 — Python virtual environment"
-# ═════════════════════════════════════════════════════════════════════════════
-info "Creating venv at $VENV_DIR…"
-python3 -m venv "$VENV_DIR"
+$kaliEntry = [PSCustomObject]@{
+    command = "mcp-remote"
+    args    = @("http://localhost:8000/sse")
+}
 
-info "Installing Python dependencies…"
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet \
-    "discord.py" httpx python-dotenv anthropic requests
+if (Test-Path $configFile) {
+    Write-Warn "Claude Desktop config already exists."
+    try {
+        $existingJson = Get-Content $configFile -Raw | ConvertFrom-Json
+    } catch {
+        Write-Warn "Existing config is not valid JSON - backing up and replacing."
+        Copy-Item $configFile "$configFile.bak"
+        $existingJson = [PSCustomObject]@{ mcpServers = [PSCustomObject]@{} }
+    }
 
-success "Python environment ready."
+    # Ensure mcpServers key exists
+    if (-not $existingJson.PSObject.Properties['mcpServers']) {
+        $existingJson | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([PSCustomObject]@{})
+    }
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 8 — /health endpoint check"
-# ═════════════════════════════════════════════════════════════════════════════
-info "Checking /health endpoint…"
-sleep 2
-if curl -sf http://localhost:8000/health | grep -q healthy; then
-    success "/health endpoint is up."
-else
-    warn "Could not reach http://localhost:8000/health."
-    warn "If server.py doesn't have the /health route, follow the README to add it,"
-    warn "then run: cd $INSTALL_DIR && docker compose build && docker compose up -d"
-fi
+    if ($existingJson.mcpServers.PSObject.Properties['kali']) {
+        Write-OK "'kali' MCP entry already present - no changes made."
+    } else {
+        Write-Info "Merging 'kali' into existing mcpServers (all other entries preserved)..."
+        Copy-Item $configFile "$configFile.bak"
+        $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'kali' -Value $kaliEntry
+        $merged = $existingJson | ConvertTo-Json -Depth 10
+        [System.IO.File]::WriteAllText($configFile, $merged)
+        Write-OK "Config updated."
+    }
+} else {
+    $newConfig = [PSCustomObject]@{
+        mcpServers = [PSCustomObject]@{
+            kali = $kaliEntry
+        }
+    }
+    $newJson = $newConfig | ConvertTo-Json -Depth 10
+    # WriteAllText writes BOM-less UTF-8 (Set-Content -Encoding UTF8 adds a BOM in PS 5.1)
+    [System.IO.File]::WriteAllText($configFile, $newJson)
+    Write-OK "Claude Desktop config written to $configFile"
+}
 
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 9 — UFW firewall rules"
-# ═════════════════════════════════════════════════════════════════════════════
-# Try default route src first, fall back to first non-loopback address.
-# || true inside $(...) prevents set -e from firing when grep finds no match.
-VM_IP_RAW=$(ip -4 route show default | grep -oP '(?<=src )\d+\.\d+\.\d+\.\d+' | head -1 || true)
-if [[ -z "$VM_IP_RAW" ]]; then
-    VM_IP_RAW=$(hostname -I | tr ' ' '\n' | grep -v '^127\.' | head -1 || true)
-fi
-if [[ -z "$VM_IP_RAW" ]]; then
-    error "Could not determine VM IP. Set VM_SUBNET manually and re-run from Step 9."
-fi
-VM_SUBNET=$(echo "$VM_IP_RAW" | sed 's/\.[0-9]*$/.0\/24/')
-info "Detected VM subnet: $VM_SUBNET  (from IP $VM_IP_RAW)"
+# =============================================================================
+Write-Header "Step 9 - Connectivity test"
+# =============================================================================
+Write-Info "Testing http://localhost:8000/health ..."
+try {
+    $resp = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 5 -UseBasicParsing
+    if ($resp.StatusCode -eq 200) {
+        Write-OK "/health responded: $($resp.Content)"
+    } else {
+        Write-Warn "/health returned status $($resp.StatusCode)"
+    }
+} catch {
+    Write-Warn "Could not reach http://localhost:8000/health"
+    Write-Warn "Make sure the Ubuntu VM is running and the Docker container is up."
+}
 
-sudo ufw allow 22/tcp comment "SSH"
-sudo ufw allow from "$VM_SUBNET" to any port 8000 comment "Kali MCP (LAN only)"
-sudo ufw --force enable
-success "UFW rules applied."
-sudo ufw status
-
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 10 — systemd service: discord-kali-bot"
-# ═════════════════════════════════════════════════════════════════════════════
-sudo tee /etc/systemd/system/discord-kali-bot.service > /dev/null <<EOF
-[Unit]
-Description=Discord Kali MCP Bot
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-User=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-EnvironmentFile=${INSTALL_DIR}/.env
-ExecStartPre=/bin/sleep 10
-ExecStart=${VENV_DIR}/bin/python3 ${INSTALL_DIR}/discord_kali_bot.py
-Restart=on-failure
-RestartSec=10
-NoNewPrivileges=yes
-PrivateTmp=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable discord-kali-bot
-sudo systemctl start discord-kali-bot
-success "discord-kali-bot service enabled and started."
-
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 11 — systemd service: kalibot-monitor"
-# ═════════════════════════════════════════════════════════════════════════════
-sudo tee /etc/systemd/system/kalibot-monitor.service > /dev/null <<EOF
-[Unit]
-Description=KaliBot Health Monitor
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-User=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-EnvironmentFile=${INSTALL_DIR}/.env
-ExecStartPre=/bin/sleep 10
-ExecStart=${VENV_DIR}/bin/python3 ${INSTALL_DIR}/health_monitor.py
-Restart=always
-RestartSec=10
-NoNewPrivileges=yes
-PrivateTmp=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable kalibot-monitor
-sudo systemctl start kalibot-monitor
-success "kalibot-monitor service enabled and started."
-
-# ═════════════════════════════════════════════════════════════════════════════
-header "Step 12 — Docker container auto-restart on boot"
-# ═════════════════════════════════════════════════════════════════════════════
-sg docker -c "docker update --restart unless-stopped kali-mcp-server" 2>/dev/null \
-    || warn "Could not set restart policy — run: docker update --restart unless-stopped kali-mcp-server"
-success "Container restart policy set."
-
-# ═════════════════════════════════════════════════════════════════════════════
-header "Summary"
-# ═════════════════════════════════════════════════════════════════════════════
-VM_IP=$(hostname -I | awk '{print $1}')
-
-echo ""
-echo -e "${BOLD}Ubuntu VM side — complete.${NC}"
-echo ""
-echo "  Install dir  : $INSTALL_DIR"
-echo "  Venv         : $VENV_DIR"
-echo "  .env         : $ENV_FILE  (chmod 600)"
-echo "  VM IP        : $VM_IP"
-echo ""
-# Check enabled (not active) — services have a 10s ExecStartPre delay so
-# they'll be in "activating" state immediately after install, not "active" yet.
-echo -e "${BOLD}Services (allow ~10s for startup delay):${NC}"
-systemctl is-enabled --quiet discord-kali-bot \
-    && echo -e "  ${GREEN}✓${NC} discord-kali-bot   enabled (starting…)" \
-    || echo -e "  ${RED}✗${NC} discord-kali-bot   NOT enabled — check: sudo journalctl -u discord-kali-bot -n 30"
-systemctl is-enabled --quiet kalibot-monitor \
-    && echo -e "  ${GREEN}✓${NC} kalibot-monitor    enabled (starting…)" \
-    || echo -e "  ${RED}✗${NC} kalibot-monitor    NOT enabled — check: sudo journalctl -u kalibot-monitor -n 30"
-echo "  Live status: sudo systemctl status discord-kali-bot kalibot-monitor"
-echo ""
-sg docker -c "docker ps --filter name=kali-mcp-server --format '  Container: {{.Names}} — {{.Status}}'" 2>/dev/null || true
-
-echo ""
-echo -e "${BOLD}Remaining manual steps (Windows side):${NC}"
-echo ""
-echo "  1. Copy windows_setup.ps1 to your Windows machine or VM"
-echo ""
-echo "  2. Open PowerShell as Administrator and run:"
-echo "       Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass"
-echo "       .\\windows_setup.ps1"
-echo ""
-echo "     The script handles everything automatically:"
-echo "     Node.js, mcp-remote, Claude Desktop, portproxy, firewall, MCP config"
-echo ""
-echo "  3. When prompted, enter this VM's IP: $VM_IP"
-echo ""
-echo "  4. Restart Claude Desktop when the script finishes."
-echo ""
-echo -e "${YELLOW}⚠  Authorised testing only. Hunt legally, hunt responsibly.${NC}"
-echo ""
+# =============================================================================
+Write-Header "Done"
+# =============================================================================
+Write-Host ""
+Write-Host "  Node.js   : $(if (Get-Command node -ErrorAction SilentlyContinue) { node --version } else { 'not in PATH - may need a restart' })"
+Write-Host "  portproxy : localhost:8000 -> ${vmIp}:8000"
+Write-Host "  Claude cfg: $configFile"
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor White
+Write-Host "  1. Restart Claude Desktop (system tray -> right-click -> Quit, then relaunch)."
+Write-Host "  2. Click [+] in Claude chat -> Connectors -> you should see 'kali' with a blue toggle."
+Write-Host "  3. Ask Claude: 'Can you run nmap on 127.0.0.1?'"
+Write-Host ""
+Write-Host "[!] Authorised testing only. Hunt legally, hunt responsibly." -ForegroundColor Yellow
+Write-Host ""

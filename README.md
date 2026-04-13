@@ -149,7 +149,7 @@ Windows Host or Windows VM (Claude Desktop)
 | Claude Desktop (direct installer) | [Download here](https://claude.ai/download) — **not** the Microsoft Store version |
 | Node.js LTS | [Download here](https://nodejs.org) — handled by `windows_setup.ps1` |
 | Anthropic API Key | [Get one here](https://console.anthropic.com) — $5 credit lasts weeks |
-| ~40GB free disk space | For VM + Docker image |
+| ~60GB free disk space | For VM + Docker image |
 | 8GB+ RAM | Minimum for stable VM |
 
 > **Important:** Use the direct Claude Desktop installer, not the Microsoft Store version. The Store version does not support remote MCP connections.
@@ -214,7 +214,7 @@ kali-mcp/  (cloned to ~/kali-mcp by install.sh)
 | Memory | 8192 MB minimum |
 | Processors | 4 cores |
 | Network Adapter | NAT |
-| Disk | 40GB minimum |
+| Disk | 60GB minimum |
 
 **Step 3 — VMware nested virtualization note**
 

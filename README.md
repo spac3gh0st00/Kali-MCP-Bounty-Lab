@@ -125,7 +125,7 @@ Windows Host (Claude Desktop)
 | Windows 10/11 64-bit | Host machine |
 | VMware Workstation 17 Pro | For running Ubuntu VM |
 | Ubuntu 24.04 LTS ISO | [Download here](https://ubuntu.com/download/desktop) |
-| Claude Desktop (direct installer) | [Download here](https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe) |
+| Claude Desktop (direct installer) | [Download here](https://claude.ai/download) |
 | Node.js LTS | [Download here](https://nodejs.org) |
 | Anthropic API Key | [Get one here](https://console.anthropic.com) — $5 credit lasts weeks |
 | ~40GB free disk space | For VM + Docker image |

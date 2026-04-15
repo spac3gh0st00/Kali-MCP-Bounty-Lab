@@ -17,6 +17,16 @@
 
 ---
 
+> ## ⚡ Prefer a GUI?
+> **The [Kali MCP Bounty Lab Installer](https://github.com/spac3gh0st00/Kali-MCP-Bounty-Lab-Installer) is a step-by-step wizard that automates this entire setup across both Linux and Windows — no manual commands needed.**
+>
+> 👉 **[github.com/spac3gh0st00/Kali-MCP-Bounty-Lab-Installer](https://github.com/spac3gh0st00/Kali-MCP-Bounty-Lab-Installer)**
+>
+> The rest of this README documents the manual setup scripts and full reference guide.
+
+---
+---
+
 ## 📌 Overview
 
 KaliBot is a complete home security research lab that bridges **Claude Desktop** on Windows with a **fully containerised Kali Linux environment** running inside an Ubuntu VM on VMware. It gives you natural language control over 35 professional penetration testing tools, live Discord alerts for every recon event and server status change, and an autonomous AI agent that plans and executes full recon pipelines on your behalf.

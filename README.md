@@ -25,7 +25,6 @@
 > The rest of this README documents the manual setup scripts and full reference guide.
 
 ---
----
 
 ## 📌 Overview
 
